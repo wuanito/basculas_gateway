@@ -1,0 +1,30 @@
+mqtt:
+  host: 192.168.10.135
+  port: 1883
+
+base_topic: basculas
+
+antenas:
+  - id: OficinaJuan
+    ip: 192.168.20.54
+    port: 8899
+    reconnect_seconds: 5
+    socket_timeout: 15
+
+  - id: Cremer
+    ip: 192.168.13.131
+    port: 8899
+    reconnect_seconds: 5
+    socket_timeout: 15
+
+  - id: Tecnomaco
+    ip: 192.168.13.122
+    port: 8899
+    reconnect_seconds: 5
+    socket_timeout: 15
+
+  - id: Sobres1
+    ip: 192.168.13.33
+    port: 8899
+    reconnect_seconds: 5
+    socket_timeout: 15
