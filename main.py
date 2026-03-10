@@ -18,20 +18,22 @@ def utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def parsear_peso(texto):
-    """
-    Extrae peso y unidad desde una cadena.
-    Ejemplos válidos:
-      '12.34 kg'
-      'ST,GS,+ 0012.50kg'
-      'Peso: 450 g'
-    """
-    match = re.search(r'([-+]?\d+(?:[.,]\d+)?)\s*(g|kg|lb)\b', texto, re.IGNORECASE)
+def parsear_peso(texto, patron=None, default_unit=None):
+    if patron is None:
+        patron = r'([-+]?\d+(?:[.,]\d+)?)\s*(g|kg|lb)\b'
+
+    match = re.search(patron, texto, re.IGNORECASE)
     if not match:
         return None, None
 
     valor_txt = match.group(1).replace(",", ".")
-    unidad = match.group(2).lower()
+
+    try:
+        unidad = match.group(2).lower()
+    except IndexError:
+        unidad = default_unit if default_unit else None
+        if unidad is None:
+            return None, None
 
     try:
         valor = float(valor_txt)
@@ -59,7 +61,7 @@ class MqttPublisher:
 
     def _on_disconnect(self, client, userdata, rc):
         self.connected = False
-        print(f"⚠️ MQTT desconectado rc={rc}")
+        print(f"⚠️  MQTT desconectado rc={rc}")
 
     def connect(self):
         self.client.reconnect_delay_set(min_delay=2, max_delay=30)
@@ -106,8 +108,11 @@ def reader_worker(antena, event_queue, pub):
     port = antena["port"]
     reconnect_seconds = antena.get("reconnect_seconds", 5)
     socket_timeout = antena.get("socket_timeout", 15)
+    custom_regex = antena.get("regex", None)
+    default_unit = antena.get("default_unit", None)
 
     ultimo_payload = None
+    ultimo_parse_error = None  # evita repetir el mismo error de parseo
     reconnects = 0
 
     while RUNNING:
@@ -120,6 +125,7 @@ def reader_worker(antena, event_queue, pub):
 
             print(f"✅ [{antena_id}] Conectado")
             publicar_estado(pub, antena, "online", {"reconnects": reconnects})
+            ultimo_parse_error = None
 
             while RUNNING:
                 data = sock.recv(1024)
@@ -130,10 +136,16 @@ def reader_worker(antena, event_queue, pub):
                 if not texto:
                     continue
 
-                valor, unidad = parsear_peso(texto)
+                valor, unidad = parsear_peso(texto, custom_regex, default_unit)
+
                 if valor is None:
-                    # Opcional: publicar RAW si quieres depurar
+                    # Solo loguea si el texto de error cambió
+                    if texto != ultimo_parse_error:
+                        print(f"⚠️  [{antena_id}] Formato desconocido: {repr(texto)}")
+                        ultimo_parse_error = texto
                     continue
+
+                ultimo_parse_error = None
 
                 payload = {
                     "antena_id": antena_id,
@@ -145,7 +157,7 @@ def reader_worker(antena, event_queue, pub):
                     "raw": texto,
                 }
 
-                # Evitar publicar duplicados exactos seguidos
+                # Solo publica y loguea si el valor cambió
                 comparable = (payload["valor"], payload["unidad"])
                 if comparable != ultimo_payload:
                     event_queue.put(("peso", antena_id, payload))
@@ -183,7 +195,7 @@ def publisher_worker(event_queue, pub):
             if tipo == "peso":
                 topic = pub.topic(antena_id, "peso")
                 pub.publish_json(topic, payload, retain=True, qos=1)
-                print(f"📤 MQTT {topic}: {payload['valor']} {payload['unidad']}")
+                print(f"📤 [{antena_id}] {payload['valor']} {payload['unidad']}  →  {topic}")
 
         except Exception as e:
             print(f"❌ Error publicando MQTT: {e}")

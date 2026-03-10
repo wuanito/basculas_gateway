@@ -28,3 +28,5 @@ antenas:
     port: 8899
     reconnect_seconds: 5
     socket_timeout: 15
+    default_unit: kg
+    regex: '[+-]?\s*(\d+(?:[.,]\d+)?)'
